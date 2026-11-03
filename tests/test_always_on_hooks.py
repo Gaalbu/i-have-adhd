@@ -167,8 +167,9 @@ class AlwaysOnHookTest(unittest.TestCase):
         shells = []
         if os.name != "nt":
             shells.append(("sh", [shutil.which("sh"), "-c", command]))
-        if powershell := shutil.which("pwsh") or shutil.which("powershell"):
-            shells.append(("powershell", [powershell, "-NoProfile", "-Command", command]))
+        for executable in ("pwsh", "powershell"):
+            if powershell := shutil.which(executable):
+                shells.append((executable, [powershell, "-NoProfile", "-Command", command]))
         self.assertTrue(shells, "no native shell available")
         for name, shell in shells:
             for enabled in (False, True):
