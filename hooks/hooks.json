@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"(async()=>{const root=process.env.CLAUDE_PLUGIN_ROOT||process.env.PLUGIN_ROOT;if(root)await import(require('node:url').pathToFileURL(require('node:path').join(root,'hooks','always-on.mjs')).href)})().catch(()=>{})\"",
+            "command": "echo \\\" <<'ADHD_POSIX' >/dev/null # \" | Out-Null\ntry {\n  $root = if ($env:CLAUDE_PLUGIN_ROOT) { $env:CLAUDE_PLUGIN_ROOT } else { $env:PLUGIN_ROOT }\n  if ($root) {\n    $script = Join-Path $root 'hooks/always-on.mjs'\n    if (Get-Command node -ErrorAction SilentlyContinue) {\n      if (Test-Path -LiteralPath $script) { & node $script }\n    } else {\n      $script = Join-Path $root 'hooks/always-on.ps1'\n      if (Test-Path -LiteralPath $script) { & (Get-Process -Id $PID).Path -NoProfile -ExecutionPolicy Bypass -File $script }\n    }\n  }\n} catch {}\nexit 0\n<#\nADHD_POSIX\nroot=\"${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}\"\n[ -n \"$root\" ] || exit 0\nif command -v node >/dev/null 2>&1; then\n  [ -f \"$root/hooks/always-on.mjs\" ] || exit 0\n  node \"$root/hooks/always-on.mjs\"\nelse\n  [ -f \"$root/hooks/always-on.sh\" ] || exit 0\n  sh \"$root/hooks/always-on.sh\"\nfi\nexit 0\n#>",
             "timeout": 30,
             "statusMessage": "Checking i-have-adhd always-on flag..."
           }

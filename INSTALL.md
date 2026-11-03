@@ -153,6 +153,20 @@ Or keep it installed and turn it off: `claude plugin disable i-have-adhd`.
 
 ### Always-on (optional)
 
+The bundled startup hook uses Node when it is available. Native Claude Code
+installations do not need to install Node for always-on mode: the launcher
+uses the existing POSIX shell implementation on macOS/Linux and Git Bash,
+or the PowerShell implementation on Windows without Git Bash. The same
+opt-in flag below controls all runtimes. No user configuration is changed by
+the hook. PowerShell's fallback is launched with a process-only execution
+policy override; it does not change the saved execution policy.
+
+The hook command has two shell branches. Its opening line hides the PowerShell
+branch in a POSIX here-document; PowerShell instead treats the POSIX branch as
+a block comment. This lets the host's default shell select its native fallback
+without requiring another interpreter just to start the hook.
+
+
 A `SessionStart` hook loads the full ruleset at the start of every session, no `/i-have-adhd` needed:
 
 ```bash

@@ -14,7 +14,7 @@ class AlwaysOnHookTest(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
-        self.plugin_root = Path(self.temp_dir.name) / "plugin with spaces"
+        self.plugin_root = Path(self.temp_dir.name) / "plugin with spaces & apostrophe's"
         shutil.copytree(ROOT / "hooks", self.plugin_root / "hooks")
         shutil.copytree(ROOT / "skills", self.plugin_root / "skills")
         self.config_dir = Path(self.temp_dir.name) / "claude config"
@@ -62,7 +62,8 @@ class AlwaysOnHookTest(unittest.TestCase):
         env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root)
         env["PLUGIN_ROOT"] = str(plugin_root)
         return subprocess.run(
-            hook["command"],
+            ([shutil.which("powershell") or shutil.which("pwsh"), "-NoProfile", "-Command", hook["command"]]
+             if os.name == "nt" else [shutil.which("sh"), "-c", hook["command"]]),
             check=False,
             capture_output=True,
             env=env,
@@ -74,7 +75,6 @@ class AlwaysOnHookTest(unittest.TestCase):
                     "source": "startup",
                 }
             ),
-            shell=True,
             text=True,
         )
 
@@ -156,17 +156,57 @@ class AlwaysOnHookTest(unittest.TestCase):
         self.assertEqual("", result.stderr)
         self.assertEqual("", result.stdout)
 
-    def test_hook_uses_a_shared_claude_and_codex_launcher(self):
+    def test_configured_hook_selects_native_runtime_without_node(self):
+        bin_dir = Path(self.temp_dir.name) / "no node bin"
+        bin_dir.mkdir()
+        if os.name != "nt":
+            for tool in ("sh", "dirname", "awk"):
+                (bin_dir / tool).symlink_to(shutil.which(tool))
         config = json.loads((ROOT / "hooks" / "hooks.json").read_text())
-        hook = config["hooks"]["SessionStart"][0]["hooks"][0]
+        command = config["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        shells = []
+        if os.name != "nt":
+            shells.append(("sh", [shutil.which("sh"), "-c", command]))
+        if powershell := shutil.which("pwsh") or shutil.which("powershell"):
+            shells.append(("powershell", [powershell, "-NoProfile", "-Command", command]))
+        self.assertTrue(shells, "no native shell available")
+        for name, shell in shells:
+            for enabled in (False, True):
+                with self.subTest(runtime=name, enabled=enabled):
+                    flag = self.config_dir / ".i-have-adhd-always"
+                    if enabled:
+                        flag.touch()
+                    else:
+                        flag.unlink(missing_ok=True)
+                    env = os.environ.copy()
+                    env.pop("CLAUDE_PLUGIN_ROOT", None)
+                    env.update(PATH=str(bin_dir), CLAUDE_CONFIG_DIR=str(self.config_dir),
+                               PLUGIN_ROOT=str(self.plugin_root))
+                    result = subprocess.run(shell, env=env, capture_output=True,
+                                            text=True, encoding="utf-8", timeout=10)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual("", result.stderr)
+                    if enabled:
+                        self.assertIn("ADHD MODE ACTIVE (always-on)", result.stdout)
+                        self.assertIn("### 10.", result.stdout)
+                        self.assertNotIn("metadata:", result.stdout)
+                    else:
+                        self.assertEqual("", result.stdout)
 
-        self.assertNotIn("args", hook)
-        command = hook["command"]
-        self.assertRegex(command, r'^node(?: --input-type=module)? -e "')
-        self.assertIn("process.env.CLAUDE_PLUGIN_ROOT", command)
-        self.assertIn("process.env.PLUGIN_ROOT", command)
-        self.assertIn("await import", command)
-        self.assertIn(".catch", command)
+    def test_powershell_launcher_preserves_node_output(self):
+        powershell = shutil.which("pwsh") or shutil.which("powershell")
+        if not powershell:
+            self.skipTest("PowerShell is not installed")
+        (self.config_dir / ".i-have-adhd-always").touch()
+        command = json.loads((ROOT / "hooks" / "hooks.json").read_text())["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        env = os.environ.copy()
+        env.update(CLAUDE_CONFIG_DIR=str(self.config_dir), CLAUDE_PLUGIN_ROOT=str(self.plugin_root))
+        result = subprocess.run([powershell, "-NoProfile", "-Command", command],
+                                env=env, capture_output=True, text=True, encoding="utf-8", timeout=10)
+        expected = self.run_hook([shutil.which("node"), self.plugin_root / "hooks" / "always-on.mjs"])
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("", result.stderr)
+        self.assertEqual(self.normalize(expected.stdout), self.normalize(result.stdout))
 
 
 if __name__ == "__main__":
