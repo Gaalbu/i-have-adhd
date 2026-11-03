@@ -1,0 +1,32 @@
+name: Contribution hook verification
+on:
+  push:
+    branches: [test/hook-runtime-verification]
+permissions:
+  contents: read
+jobs:
+  hooks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        ref: [fix/codex-session-start-json, fix/native-hook-runtime, test/both-hook-fixes]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exercise configured hooks and native fallbacks
+        run: python -m unittest discover -s tests -p 'test_*hook*.py' -v
+      - name: Full suite and eval schema on Linux
+        if: runner.os == 'Linux'
+        run: |
+          python -m unittest discover -s tests -v
+          python scripts/run_evals.py validate
